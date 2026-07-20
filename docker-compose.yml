@@ -1,0 +1,33 @@
+services:
+  value-finder:
+    container_name: value-finder
+
+    image: value-finder:latest
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    restart: unless-stopped
+
+    init: true
+
+    env_file:
+      - .env
+
+    ports:
+      - "3001:3001"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+    networks:
+      - value-finder-network
+
+networks:
+  value-finder-network:
+    name: value-finder-network
+    driver: bridge
