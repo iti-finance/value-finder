@@ -1,0 +1,21 @@
+import { sleep } from "k6";
+
+import { getHealth } from "../utils/http.js";
+
+export const options = {
+  stages: [
+    { duration: "1m", target: 10 },
+    { duration: "2m", target: 25 },
+    { duration: "2m", target: 50 },
+    { duration: "1m", target: 0 },
+  ],
+  thresholds: {
+    http_req_failed: ["rate<0.05"],
+    http_req_duration: ["p(95)<1500"],
+  },
+};
+
+export default function () {
+  getHealth();
+  sleep(1);
+}

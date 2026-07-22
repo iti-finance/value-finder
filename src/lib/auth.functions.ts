@@ -3,6 +3,7 @@ import { z } from "zod";
 import { signJwt, type AuthTokenPayload } from "@/integrations/auth/jwt.server";
 import { hashPassword, verifyPassword } from "@/integrations/auth/password.server";
 import { db } from "@/integrations/db/client.server";
+import { authenticateUser } from "@/integrations/auth/auth.service";
 
 const LoginInputSchema = z.object({
   identifier: z.string().trim().min(1),
@@ -10,50 +11,11 @@ const LoginInputSchema = z.object({
   mode: z.enum(["branch", "admin"]),
 });
 
+
 export const login = createServerFn({ method: "POST" })
   .validator((input: unknown) => LoginInputSchema.parse(input))
   .handler(async ({ data }) => {
-    const identifier = data.identifier.toLowerCase();
-    const userRow = await db.query<{
-      user_id: string;
-      password_hash: string;
-      employee_code: string;
-      full_name: string;
-      role: "admin" | "branch";
-      is_active: boolean;
-      email: string | null;
-    }>(
-      `SELECT p.user_id, p.password_hash, p.employee_code, p.full_name, u.role, p.is_active, p.email
-       FROM profiles p
-       JOIN user_roles u ON u.user_id = p.user_id
-       WHERE ${data.mode === "admin" ? "lower(p.email) = $1" : "lower(p.employee_code) = $1"}
-       LIMIT 1`,
-      [identifier],
-    );
-    const row = userRow.rows[0];
-    if (!row || !row.is_active) {
-      throw new Error("Invalid credentials");
-    }
-    const valid = await verifyPassword(data.password, row.password_hash);
-    if (!valid) {
-      throw new Error("Invalid credentials");
-    }
-    const payload: AuthTokenPayload = {
-      userId: row.user_id,
-      role: row.role,
-      employeeCode: row.employee_code,
-      fullName: row.full_name,
-    };
-    const token = signJwt(payload);
-    return {
-      token,
-      user: {
-        userId: row.user_id,
-        role: row.role,
-        employeeCode: row.employee_code,
-        fullName: row.full_name,
-      },
-    };
+    return authenticateUser(data);
   });
 
 export const bootstrapFirstAdmin = createServerFn({ method: "POST" })

@@ -1,0 +1,20 @@
+{
+  "name": "value-finder-performance",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "check": "dotenv -e .env -- k6 run scenarios/browser-check.js",
+    "smoke": "dotenv -e .env -- k6 run scenarios/smoke.js",
+    "smoke:browser": "dotenv -e .env -- k6 run scenarios/login-smoke.js",
+    "concurrent:50x200": "dotenv -e .env -- k6 run --summary-export reports/concurrent-50x200-summary.json scenarios/concurrent-50x200.js",
+    "workflow:smoke": "dotenv -e .env -- k6 run --summary-export reports/value-finder-workflow-summary.json scenarios/value-finder-workflow.js",
+    "workflow:load": "dotenv -e .env -- k6 run --summary-export reports/value-finder-workflow-summary.json scenarios/value-finder-workflow.js",
+    "baseline": "dotenv -e .env -- k6 run scenarios/baseline.js",
+    "stress": "dotenv -e .env -- k6 run scenarios/stress.js",
+    "spike": "dotenv -e .env -- k6 run scenarios/spike.js",
+    "soak": "dotenv -e .env -- k6 run scenarios/soak.js"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^10.0.0"
+  }
+}
