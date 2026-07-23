@@ -23,10 +23,10 @@ export const pool = new Pool({
 (async () => {
   try {
     const client: PoolClient = await pool.connect();
-    console.log("✅ Connected to PostgreSQL");
+    console.log("Connected to PostgreSQL");
     client.release();
   } catch (error) {
-    console.error("❌ Unable to connect to PostgreSQL");
+    console.error("Unable to connect to PostgreSQL");
 
     if (error instanceof Error) {
       console.error(error.message);
@@ -45,5 +45,21 @@ export const db = {
     params?: unknown[],
   ): Promise<QueryResult<T>> => {
     return pool.query<T>(text, params);
+  },
+
+  withTransaction: async <T>(callback: (client: PoolClient) => Promise<T>): Promise<T> => {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const result = await callback(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   },
 };

@@ -1,14 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { checkReadiness } from "@/lib/health";
 
 export const Route = createFileRoute("/api/health")({
   server: {
     handlers: {
       GET: async () => {
-        return Response.json({
-          status: "UP",
-          application: "Value Finder",
-          version: "1.0.0",
-          timestamp: new Date().toISOString(),
+        const health = await checkReadiness();
+
+        return Response.json(health, {
+          status: health.status === "UP" ? 200 : 503,
         });
       },
     },

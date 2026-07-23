@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { signJwt, type AuthTokenPayload } from "@/integrations/auth/jwt.server";
-import { hashPassword, verifyPassword } from "@/integrations/auth/password.server";
+import { hashPassword } from "@/integrations/auth/password.server";
 import { db } from "@/integrations/db/client.server";
 import { authenticateUser } from "@/integrations/auth/auth.service";
 
@@ -10,7 +9,6 @@ const LoginInputSchema = z.object({
   password: z.string().min(4),
   mode: z.enum(["branch", "admin"]),
 });
-
 
 export const login = createServerFn({ method: "POST" })
   .validator((input: unknown) => LoginInputSchema.parse(input))

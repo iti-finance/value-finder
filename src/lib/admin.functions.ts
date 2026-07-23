@@ -33,34 +33,33 @@ export const replaceVehicleData = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertAdmin(context.userId);
 
-    // Wipe existing rows
-    await db.query(`DELETE FROM vehicle_values`);
+    await db.withTransaction(async (client) => {
+      await client.query(`DELETE FROM vehicle_values`);
 
-    // Insert in batches
-    // Insert in batches
-    const BATCH = 1000;
-    for (let i = 0; i < data.rows.length; i += BATCH) {
-      const batch = data.rows.slice(i, i + BATCH);
-      const params: Array<string | number> = [];
+      const BATCH = 1000;
+      for (let i = 0; i < data.rows.length; i += BATCH) {
+        const batch = data.rows.slice(i, i + BATCH);
+        const params: Array<string | number> = [];
 
-      const valuesSql = batch
-        .map((r, idx) => {
-          const base = idx * 5;
-          params.push(r.make, r.model, r.variant, r.year, r.value);
+        const valuesSql = batch
+          .map((r, idx) => {
+            const base = idx * 5;
+            params.push(r.make, r.model, r.variant, r.year, r.value);
 
-          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
-        })
-        .join(",");
+            return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
+          })
+          .join(",");
 
-      const sql = `INSERT INTO vehicle_values (make, model, variant, year, value) VALUES ${valuesSql}`;
+        const sql = `INSERT INTO vehicle_values (make, model, variant, year, value) VALUES ${valuesSql}`;
 
-      await db.query(sql, params);
-    }
+        await client.query(sql, params);
+      }
 
-    await db.query(
-      `INSERT INTO upload_history (uploaded_by, filename, record_count) VALUES ($1, $2, $3)`,
-      [context.userId, data.filename, data.rows.length],
-    );
+      await client.query(
+        `INSERT INTO upload_history (uploaded_by, filename, record_count) VALUES ($1, $2, $3)`,
+        [context.userId, data.filename, data.rows.length],
+      );
+    });
 
     return { ok: true, count: data.rows.length };
   });

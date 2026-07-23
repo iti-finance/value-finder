@@ -45,11 +45,7 @@ export async function authenticateUser(
      FROM profiles p
      JOIN user_roles u
        ON u.user_id = p.user_id
-     WHERE ${
-       input.mode === "admin"
-         ? "lower(p.email) = $1"
-         : "lower(p.employee_code) = $1"
-     }
+     WHERE ${input.mode === "admin" ? "lower(p.email) = $1" : "lower(p.employee_code) = $1"}
      LIMIT 1`,
     [identifier],
   );

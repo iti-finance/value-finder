@@ -1,26 +1,22 @@
-# =====================================================
-# Stage 1 - Build
-# =====================================================
-FROM node:22-alpine AS builder
+FROM node:24-bookworm-slim AS builder
 
 WORKDIR /app
 
-# Copy package files
+ARG NPM_CONFIG_STRICT_SSL=true
+ENV npm_config_strict_ssl=${NPM_CONFIG_STRICT_SSL}
+ENV npm_config_update_notifier=false
+
 COPY package.json package-lock.json ./
+COPY vendor ./vendor
 
-# Install all dependencies
-RUN npm install --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 
-# Copy application source
 COPY . .
 
-# Build the application
 RUN npm run build
+RUN npm prune --omit=dev
 
-# =====================================================
-# Stage 2 - Production
-# =====================================================
-FROM node:22-alpine
+FROM node:24-bookworm-slim
 
 LABEL org.opencontainers.image.title="Value Finder" \
       org.opencontainers.image.description="Vehicle valuation and management application" \
@@ -34,20 +30,13 @@ ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=3001
 
-# Copy package files
-COPY --chown=node:node package.json package-lock.json ./
-
-# Install only production dependencies
-RUN npm install --omit=dev --no-audit --no-fund
-
-# Copy Nitro build output
+COPY --from=builder --chown=node:node /app/package.json ./package.json
+COPY --from=builder --chown=node:node /app/package-lock.json ./package-lock.json
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/.output ./.output
 
-# Expose application port
 EXPOSE 3001
 
-# Run as non-root user
 USER node
 
-# Start application
 CMD ["node", ".output/server/index.mjs"]
