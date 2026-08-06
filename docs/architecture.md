@@ -85,7 +85,7 @@ The app uses TanStack Router file-based routing.
 
 Important routes:
 
-- `/auth` - login, forgot password request, and first-admin setup
+- `/auth` - login and forgot password request
 - `/` - redirects authenticated users to `/admin` or `/value-finder`
 - `/_authenticated` - authenticated layout and client-side route guard
 - `/value-finder` - branch valuation workflow
@@ -146,7 +146,7 @@ Server functions live mainly in `src/lib`.
 
 Main groups:
 
-- `auth.functions.ts` - login, first-admin bootstrap, password reset request
+- `auth.functions.ts` - login and password reset request
 - `vehicle.functions.ts` - vehicle lookup data, search, audit logs, upload
   history, reset request listing
 - `admin.functions.ts` - admin checks, master data replacement, audit cleanup,

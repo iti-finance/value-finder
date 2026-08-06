@@ -83,35 +83,6 @@ Returns:
 }
 ```
 
-### `bootstrapFirstAdmin`
-
-Method: `POST`
-
-Auth: public
-
-Input:
-
-```ts
-{
-  employee_code: string;
-  full_name: string;
-  email: string;
-  password: string;
-}
-```
-
-Behavior:
-
-- Creates the first admin account only when no admin role exists.
-- Password must be at least 6 characters.
-- Inserts into `profiles` and `user_roles`.
-
-Returns:
-
-```ts
-{ ok: true }
-```
-
 ### `requestPasswordReset`
 
 Method: `POST`
@@ -136,24 +107,6 @@ Returns:
 
 ```ts
 { ok: true }
-```
-
-### `adminBootstrapStatus`
-
-Method: `GET`
-
-Auth: public
-
-Behavior:
-
-- Checks whether any admin role exists.
-
-Returns:
-
-```ts
-{
-  needsBootstrap: boolean;
-}
 ```
 
 ## Vehicle Functions
@@ -420,25 +373,6 @@ Returns:
 {
   ok: true;
   count: number;
-}
-```
-
-### `promoteSelfToAdminIfEmpty`
-
-Method: `POST`
-
-Auth: authenticated
-
-Behavior:
-
-- Promotes the current user to admin only when no admin role exists.
-- Returns `promoted: false` if an admin already exists.
-
-Returns:
-
-```ts
-{
-  promoted: boolean;
 }
 ```
 

@@ -85,6 +85,16 @@ JWT_EXPIRES_IN=8h
 
 Use a strong, private value for `JWT_SECRET` outside local development.
 
+For local `npm run dev` on your machine, keep `DB_HOST=localhost`.
+Use `DB_HOST=postgres` only when the app itself is running inside
+`docker compose`.
+
+If you want separate ignored env files for each runtime:
+
+- Copy `.env.local.example` to `.env.local` for host-machine development.
+- Copy `.env.server.example` to `.env.server` for Docker/server-style settings.
+- Run `npm run dev:local` or `npm run dev:server` as needed.
+
 ## Database Setup
 
 1. Create a PostgreSQL database named `value_finder`.
@@ -120,9 +130,6 @@ npm run dev
 ```
 
 Open the local URL shown in the terminal.
-
-On a fresh database, the `/auth` page shows a one-time first administrator
-setup flow when no admin role exists.
 
 ## Production Build
 
@@ -199,7 +206,7 @@ Bulk user uploads accept Excel/CSV files with these columns:
 
 ## Routes
 
-- `/auth` - sign in, password reset request, and first-admin setup
+- `/auth` - sign in and password reset request
 - `/` - redirects authenticated users to the correct area
 - `/value-finder` - branch value lookup workflow
 - `/admin` - admin console

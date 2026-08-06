@@ -296,12 +296,11 @@ vehicle_values
 
 ### User Lifecycle
 
-1. First admin is created from `/auth` when no admin role exists.
-2. Admins create branch/admin users from the admin console.
-3. Passwords are stored in `profiles.password_hash`.
-4. Admins can activate, deactivate, reset, or delete users.
-5. Deleting a profile cascades to `user_roles`.
-6. Deleting a profile may be blocked by related `upload_history`, `audit_logs`,
+1. Admins create branch/admin users from the admin console.
+2. Passwords are stored in `profiles.password_hash`.
+3. Admins can activate, deactivate, reset, or delete users.
+4. Deleting a profile cascades to `user_roles`.
+5. Deleting a profile may be blocked by related `upload_history`, `audit_logs`,
    or `password_reset_requests.resolved_by` rows.
 
 ### Vehicle Master Data Lifecycle

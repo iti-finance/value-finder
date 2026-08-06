@@ -64,17 +64,6 @@ export const replaceVehicleData = createServerFn({ method: "POST" })
     return { ok: true, count: data.rows.length };
   });
 
-export const promoteSelfToAdminIfEmpty = createServerFn({ method: "POST" })
-  .middleware([requireAuth])
-  .handler(async ({ context }) => {
-    const { rows } = await db.query<{ count: number }>(
-      `SELECT COUNT(*)::int AS count FROM user_roles WHERE role = 'admin'`,
-    );
-    if ((rows[0]?.count ?? 0) > 0) return { promoted: false };
-    await db.query(`INSERT INTO user_roles (user_id, role) VALUES ($1, 'admin')`, [context.userId]);
-    return { promoted: true };
-  });
-
 async function assertAdmin(userId: string) {
   const { rows } = await db.query<{ role: string }>(
     `SELECT role FROM user_roles WHERE user_id = $1`,

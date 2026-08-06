@@ -5,9 +5,6 @@ import { hashPassword } from "@/integrations/auth/password.server";
 import { db } from "@/integrations/db/client.server";
 import { z } from "zod";
 
-const EMAIL_DOMAIN = "iti.local";
-const codeToEmail = (code: string) => `${code.trim().toLowerCase()}@${EMAIL_DOMAIN}`;
-
 const CreateUserSchema = z.object({
   employee_code: z
     .string()
@@ -29,41 +26,6 @@ async function assertAdmin(userId: string) {
     throw new Error("Forbidden");
   }
 }
-
-export const bootstrapFirstAdmin = createServerFn({ method: "POST" })
-  .validator((input: unknown) =>
-    CreateUserSchema.omit({ role: true, email: true })
-      .extend({
-        email: z.string().trim().email().max(255),
-        password: z.string().min(6).max(128),
-      })
-      .parse(input),
-  )
-  .handler(async ({ data }) => {
-    const { rows } = await db.query<{ count: number }>(
-      `SELECT COUNT(*)::int AS count FROM user_roles WHERE role = 'admin'`,
-    );
-    if ((rows[0]?.count ?? 0) > 0) {
-      throw new Error("Setup already complete");
-    }
-
-    const passwordHash = await hashPassword(data.password);
-    const userId = randomUUID();
-    await db.query(
-      `INSERT INTO profiles (user_id, employee_code, full_name, email, password_hash, is_active)
-       VALUES ($1, $2, $3, $4, $5, true)`,
-      [userId, data.employee_code, data.full_name, data.email.toLowerCase(), passwordHash],
-    );
-    await db.query(`INSERT INTO user_roles (user_id, role) VALUES ($1, 'admin')`, [userId]);
-    return { ok: true };
-  });
-
-export const adminBootstrapStatus = createServerFn({ method: "GET" }).handler(async () => {
-  const { rows } = await db.query<{ count: number }>(
-    `SELECT COUNT(*)::int AS count FROM user_roles WHERE role = 'admin'`,
-  );
-  return { needsBootstrap: (rows[0]?.count ?? 0) === 0 };
-});
 
 export const resolveLoginEmail = createServerFn({ method: "POST" })
   .validator((input: unknown) =>

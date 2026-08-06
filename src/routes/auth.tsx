@@ -20,8 +20,6 @@ import { Loader2, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import itiLogo from "@/assets/iti-logo.png";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  adminBootstrapStatus,
-  bootstrapFirstAdmin,
   login,
   requestPasswordReset,
 } from "@/lib/auth.functions";
@@ -49,11 +47,8 @@ function AuthPage() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [needsBootstrap, setNeedsBootstrap] = useState(false);
 
   const loginFn = useServerFn(login);
-  const bootstrapStatusFn = useServerFn(adminBootstrapStatus);
-  const bootstrapFn = useServerFn(bootstrapFirstAdmin);
   const auditFn = useServerFn(logAuditEvent);
 
   useEffect(() => {
@@ -66,11 +61,7 @@ function AuthPage() {
       }
     }
 
-    (async () => {
-      const status = await bootstrapStatusFn();
-      setNeedsBootstrap(status.needsBootstrap);
-    })();
-  }, [bootstrapStatusFn, navigate]);
+  }, [navigate]);
 
   const signIn = async () => {
     const identifier = mode === "admin" ? adminEmail.trim().toLowerCase() : employeeCode.trim();
@@ -185,10 +176,6 @@ function AuthPage() {
               <ForgotPassword />
               <span className="text-muted-foreground">v1.0</span>
             </div>
-
-            {needsBootstrap && (
-              <BootstrapAdmin bootstrapFn={bootstrapFn} onDone={() => setNeedsBootstrap(false)} />
-            )}
           </CardContent>
         </Card>
 
@@ -247,100 +234,5 @@ function ForgotPassword() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function BootstrapAdmin({
-  bootstrapFn,
-  onDone,
-}: {
-  bootstrapFn: (args: {
-    data: { employee_code: string; full_name: string; email: string; password: string };
-  }) => Promise<unknown>;
-  onDone: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [employeeCode, setEmployeeCode] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const submit = async () => {
-    setLoading(true);
-    try {
-      await bootstrapFn({
-        data: {
-          employee_code: employeeCode.trim(),
-          full_name: fullName.trim(),
-          password,
-          email: email.trim(),
-        },
-      });
-      toast.success("Admin created. You can now sign in.");
-      setOpen(false);
-      onDone();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Setup failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-3 text-xs">
-      <p className="mb-2 font-medium">First-time setup required</p>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTrigger asChild>
-          <Button variant="outline" size="sm" className="w-full">
-            Create First Administrator
-          </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Set up first administrator</DialogTitle>
-            <DialogDescription>
-              This is a one-time setup. Subsequent users must be created by an admin.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>Employee Code</Label>
-              <Input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Full Name</Label>
-              <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Email</Label>
-              <Input
-                type="email"
-                placeholder="admin@itifl.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Password (min 6 chars)</Label>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              onClick={submit}
-              disabled={loading || !employeeCode || !fullName || !email || password.length < 6}
-            >
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Admin
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
   );
 }
