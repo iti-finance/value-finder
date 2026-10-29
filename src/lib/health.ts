@@ -1,6 +1,6 @@
 import { db } from "@/integrations/db/client.server";
 
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.1.1";
 
 export async function checkReadiness() {
   const timestamp = new Date().toISOString();

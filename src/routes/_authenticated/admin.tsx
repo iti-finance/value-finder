@@ -45,6 +45,7 @@ import {
   resetUserPassword,
   resolvePasswordResetRequest,
   setUserActive,
+  updateUser,
 } from "@/lib/users.functions";
 import { bulkCreateUsers } from "@/lib/users.functions";
 import { toast } from "sonner";
@@ -52,6 +53,8 @@ import {
   Loader2,
   Upload,
   Download,
+  Search,
+  Pencil,
   LogOut,
   FileSpreadsheet,
   CheckCircle2,
@@ -507,6 +510,7 @@ function formatDesignation(value: string) {
 function UsersPanel() {
   const listFn = useServerFn(listAllUsers);
   const createFn = useServerFn(createUser);
+  const updateFn = useServerFn(updateUser);
   const toggleFn = useServerFn(setUserActive);
   const resetFn = useServerFn(resetUserPassword);
   const bulkFn = useServerFn(bulkCreateUsers);
@@ -515,6 +519,8 @@ function UsersPanel() {
   const [loading, setLoading] = useState(true);
   const [openCreate, setOpenCreate] = useState(false);
   const [openBulk, setOpenBulk] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserRow | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [designationFilter, setDesignationFilter] = useState("all");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -529,6 +535,11 @@ function UsersPanel() {
   ).sort((a, b) => a.localeCompare(b));
 
   const filteredUsers = users.filter((user) => {
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+    const matchesSearch =
+      !normalizedSearch ||
+      user.employee_code.toLowerCase().includes(normalizedSearch) ||
+      user.full_name.toLowerCase().includes(normalizedSearch);
     const matchesDesignation =
       designationFilter === "all" ||
       (designationFilter === "unassigned"
@@ -538,7 +549,7 @@ function UsersPanel() {
     const matchesStatus =
       statusFilter === "all" || (statusFilter === "active" ? user.is_active : !user.is_active);
 
-    return matchesDesignation && matchesRole && matchesStatus;
+    return matchesSearch && matchesDesignation && matchesRole && matchesStatus;
   });
 
   const refresh = useCallback(async () => {
@@ -619,11 +630,21 @@ function UsersPanel() {
 
   return (
     <Card className="border-0 shadow-[var(--shadow-card)]">
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <UsersIcon className="h-4 w-4" /> Branch & admin users
         </CardTitle>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search employee ID or name"
+              className="h-9 w-64 pl-8"
+              aria-label="Search users by employee ID or name"
+            />
+          </div>
           <Button
             size="sm"
             variant="outline"
@@ -746,6 +767,14 @@ function UsersPanel() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={() => setEditingUser(u)}
+                    title="Edit user"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => onReset(u)}
                     title="Reset password"
                   >
@@ -765,6 +794,24 @@ function UsersPanel() {
           </ul>
         )}
       </CardContent>
+      <Dialog
+        open={Boolean(editingUser)}
+        onOpenChange={(open) => {
+          if (!open) setEditingUser(null);
+        }}
+      >
+        {editingUser && (
+          <EditUserDialog
+            user={editingUser}
+            updateFn={updateFn}
+            designationOptions={designationOptions}
+            onUpdated={async () => {
+              setEditingUser(null);
+              await refresh();
+            }}
+          />
+        )}
+      </Dialog>
     </Card>
   );
 }
@@ -916,6 +963,134 @@ function CreateUserDialog({
         <Button onClick={submit} disabled={loading || !employeeCode || !fullName}>
           {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Create User
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
+function EditUserDialog({
+  user,
+  updateFn,
+  designationOptions,
+  onUpdated,
+}: {
+  user: UserRow;
+  updateFn: (args: {
+    data: {
+      user_id: string;
+      full_name: string;
+      designation?: string;
+      email?: string;
+      role: "admin" | "branch";
+    };
+  }) => Promise<unknown>;
+  designationOptions: string[];
+  onUpdated: () => void | Promise<void>;
+}) {
+  const [fullName, setFullName] = useState(user.full_name);
+  const [designation, setDesignation] = useState(user.designation ?? "");
+  const [email, setEmail] = useState(user.email ?? "");
+  const [role, setRole] = useState<"admin" | "branch">(user.role === "admin" ? "admin" : "branch");
+  const [loading, setLoading] = useState(false);
+  const [designationFocused, setDesignationFocused] = useState(false);
+
+  const designationQuery = designation.trim().toLowerCase();
+  const designationSuggestions = designationQuery
+    ? designationOptions
+        .filter((option) => option.toLowerCase().includes(designationQuery))
+        .slice(0, 6)
+    : [];
+
+  const submit = async () => {
+    setLoading(true);
+    try {
+      await updateFn({
+        data: {
+          user_id: user.user_id,
+          full_name: fullName.trim(),
+          designation: designation.trim(),
+          email: email.trim(),
+          role,
+        },
+      });
+      toast.success(`Updated ${user.employee_code}`);
+      await onUpdated();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update user");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle>Edit user</DialogTitle>
+      </DialogHeader>
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <Label>Employee Code</Label>
+          <Input value={user.employee_code} disabled />
+          <p className="text-xs text-muted-foreground">Employee code cannot be changed.</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label>
+            Full Name <span className="text-destructive">*</span>
+          </Label>
+          <Input value={fullName} onChange={(event) => setFullName(event.target.value)} />
+        </div>
+        <div className="relative space-y-1.5">
+          <Label>Designation</Label>
+          <Input
+            value={designation}
+            onChange={(event) => setDesignation(formatDesignation(event.target.value))}
+            onFocus={() => setDesignationFocused(true)}
+            onBlur={() => setDesignationFocused(false)}
+            placeholder="e.g. Branch Manager"
+            maxLength={120}
+            autoComplete="off"
+          />
+          {designationFocused && designationSuggestions.length > 0 && (
+            <div className="absolute z-50 mt-1 max-h-44 w-full overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+              {designationSuggestions.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className="flex w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    setDesignation(option);
+                    setDesignationFocused(false);
+                  }}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label>Email (optional for users)</Label>
+          <Input value={email} onChange={(event) => setEmail(event.target.value)} type="email" />
+        </div>
+        <div className="space-y-1.5">
+          <Label>User type</Label>
+          <Select value={role} onValueChange={(value) => setRole(value as "admin" | "branch")}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="branch">User</SelectItem>
+              <SelectItem value="admin">Administrator</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button onClick={submit} disabled={loading || !fullName.trim()}>
+          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Save changes
         </Button>
       </DialogFooter>
     </DialogContent>

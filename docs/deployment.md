@@ -54,7 +54,7 @@ service. Never overwrite a working production `.env` with an example file.
 ## Deploy a specific release
 
 Production must deploy an immutable release tag, not an unpinned branch head.
-Replace `<release-tag>` with an approved tag such as `v1.1.0`:
+Replace `<release-tag>` with an approved tag such as `v1.1.1`:
 
 ```bash
 git fetch origin --tags

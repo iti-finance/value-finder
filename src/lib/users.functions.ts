@@ -137,6 +137,51 @@ export const listAllUsers = createServerFn({ method: "GET" })
     }));
   });
 
+export const updateUser = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .validator((input: unknown) =>
+    z
+      .object({
+        user_id: z.string().uuid(),
+        full_name: z.string().trim().min(1).max(120),
+        designation: z.string().trim().max(120).optional().or(z.literal("")),
+        email: z.string().trim().email().max(255).optional().or(z.literal("")),
+        role: z.enum(["admin", "branch"]),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.userId);
+    if (data.role === "admin" && !data.email) {
+      throw new Error("Email is required for administrator accounts");
+    }
+    if (data.user_id === context.userId && data.role !== "admin") {
+      throw new Error("You cannot remove your own administrator role");
+    }
+
+    const designation = await resolveDesignation(data.designation);
+    const email = data.email ? data.email.toLowerCase() : null;
+
+    await db.withTransaction(async (client) => {
+      const result = await client.query(
+        `UPDATE profiles
+         SET full_name = $1, designation = $2, email = $3
+         WHERE user_id = $4`,
+        [data.full_name, designation, email, data.user_id],
+      );
+      if (result.rowCount === 0) throw new Error("User not found");
+
+      await client.query(
+        `INSERT INTO user_roles (user_id, role)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE SET role = EXCLUDED.role`,
+        [data.user_id, data.role],
+      );
+    });
+
+    return { ok: true };
+  });
+
 export const setUserActive = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .validator((input: unknown) =>
