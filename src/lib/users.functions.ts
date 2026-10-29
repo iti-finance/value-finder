@@ -13,9 +13,43 @@ const CreateUserSchema = z.object({
     .max(50)
     .regex(/^[A-Za-z0-9_-]+$/, "Only letters, numbers, _ and -"),
   full_name: z.string().trim().min(1).max(120),
+  designation: z.string().trim().max(120).optional().or(z.literal("")),
   email: z.string().trim().email().max(255).optional().or(z.literal("")),
   role: z.enum(["admin", "branch"]),
 });
+
+function resolvePasswordCandidate(candidate: unknown, fallback: string) {
+  if (typeof candidate === "string") {
+    const trimmed = candidate.trim();
+    if (trimmed.length >= 4) return trimmed;
+  }
+
+  return fallback.trim();
+}
+
+function formatDesignation(value: string) {
+  return value
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/(^|[\s/-])([a-z])/g, (_, separator: string, letter: string) => {
+      return `${separator}${letter.toUpperCase()}`;
+    });
+}
+
+async function resolveDesignation(candidate: string | undefined) {
+  const formatted = formatDesignation(candidate ?? "");
+  if (!formatted) return null;
+
+  const { rows } = await db.query<{ designation: string }>(
+    `SELECT designation
+     FROM profiles
+     WHERE designation IS NOT NULL AND lower(designation) = lower($1)
+     LIMIT 1`,
+    [formatted],
+  );
+
+  return formatDesignation(rows[0]?.designation ?? formatted);
+}
 
 async function assertAdmin(userId: string) {
   const { rows } = await db.query<{ role: string }>(
@@ -54,15 +88,16 @@ export const createUser = createServerFn({ method: "POST" })
     }
 
     const userId = randomUUID();
-    const password =
-      data.password && data.password.length >= 4 ? data.password : data.employee_code;
+    const password = resolvePasswordCandidate(data.password, data.employee_code);
     const passwordHash = await hashPassword(password);
     const email = data.email ? data.email.toLowerCase() : null;
+    const designation = await resolveDesignation(data.designation);
 
     await db.query(
-      `INSERT INTO profiles (user_id, employee_code, full_name, email, password_hash, is_active)
-       VALUES ($1, $2, $3, $4, $5, true)`,
-      [userId, data.employee_code, data.full_name, email, passwordHash],
+      `INSERT INTO profiles
+         (user_id, employee_code, full_name, designation, email, password_hash, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, true)`,
+      [userId, data.employee_code, data.full_name, designation, email, passwordHash],
     );
     await db.query(`INSERT INTO user_roles (user_id, role) VALUES ($1, $2)`, [userId, data.role]);
 
@@ -78,12 +113,14 @@ export const listAllUsers = createServerFn({ method: "GET" })
       user_id: string;
       employee_code: string;
       full_name: string;
+      designation: string | null;
       email: string | null;
       is_active: boolean;
       role: string | null;
       created_at: string;
     }>(
-      `SELECT p.user_id, p.employee_code, p.full_name, p.email, p.is_active, r.role, p.created_at
+      `SELECT p.user_id, p.employee_code, p.full_name, p.designation, p.email,
+              p.is_active, r.role, p.created_at
        FROM profiles p
        LEFT JOIN user_roles r ON r.user_id = p.user_id
        ORDER BY p.created_at DESC`,
@@ -92,6 +129,7 @@ export const listAllUsers = createServerFn({ method: "GET" })
       user_id: r.user_id,
       employee_code: r.employee_code,
       full_name: r.full_name,
+      designation: r.designation,
       email: r.email,
       is_active: r.is_active,
       role: r.role ?? "branch",
@@ -118,10 +156,12 @@ export const deleteUser = createServerFn({ method: "POST" })
   .validator((input: unknown) => z.object({ user_id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     await assertAdmin(context.userId);
-    if (data.user_id === context.userId) throw new Error("Cannot delete yourself");
-    await db.query(`DELETE FROM user_roles WHERE user_id = $1`, [data.user_id]);
-    await db.query(`DELETE FROM profiles WHERE user_id = $1`, [data.user_id]);
-    return { ok: true };
+    if (data.user_id === context.userId) throw new Error("Cannot deactivate yourself");
+
+    // Kept as a compatibility endpoint for older deployed clients. Users are
+    // never physically deleted; a delete request is treated as deactivation.
+    await db.query(`UPDATE profiles SET is_active = false WHERE user_id = $1`, [data.user_id]);
+    return { ok: true, deactivated: true };
   });
 
 export const resetUserPassword = createServerFn({ method: "POST" })
@@ -141,8 +181,7 @@ export const resetUserPassword = createServerFn({ method: "POST" })
     const user = rows[0];
     if (!user) throw new Error("User not found");
 
-    const newPassword =
-      data.password && data.password.length >= 4 ? data.password : user.employee_code;
+    const newPassword = resolvePasswordCandidate(data.password, user.employee_code);
     const passwordHash = await hashPassword(newPassword);
     await db.query(`UPDATE profiles SET password_hash = $1 WHERE user_id = $2`, [
       passwordHash,
@@ -167,6 +206,7 @@ export const bulkCreateUsers = createServerFn({ method: "POST" })
             z.object({
               employee_code: z.string().trim().min(1).max(50),
               full_name: z.string().trim().min(1).max(120),
+              designation: z.string().trim().max(120).optional().or(z.literal("")),
               email: z.string().trim().max(255).optional().or(z.literal("")),
               role: z.string().trim().optional(),
               password: z.string().trim().max(128).optional().or(z.literal("")),
@@ -191,6 +231,7 @@ export const bulkCreateUsers = createServerFn({ method: "POST" })
         const parsed = BulkUserRow.parse({
           employee_code: raw.employee_code,
           full_name: raw.full_name,
+          designation: raw.designation ?? "",
           email: raw.email ?? "",
           role: raw.role?.toLowerCase() === "admin" ? "admin" : "branch",
           password: raw.password ?? "",
@@ -198,16 +239,17 @@ export const bulkCreateUsers = createServerFn({ method: "POST" })
         if (parsed.role === "admin" && !parsed.email) {
           throw new Error("Email is required for administrator accounts");
         }
-        const password =
-          parsed.password && parsed.password.length >= 4 ? parsed.password : parsed.employee_code;
+        const password = resolvePasswordCandidate(parsed.password, parsed.employee_code);
         const passwordHash = await hashPassword(password);
         const userId = randomUUID();
         const email = parsed.email ? parsed.email.toLowerCase() : null;
+        const designation = await resolveDesignation(parsed.designation);
 
         await db.query(
-          `INSERT INTO profiles (user_id, employee_code, full_name, email, password_hash, is_active)
-           VALUES ($1, $2, $3, $4, $5, true)`,
-          [userId, parsed.employee_code, parsed.full_name, email, passwordHash],
+          `INSERT INTO profiles
+             (user_id, employee_code, full_name, designation, email, password_hash, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, true)`,
+          [userId, parsed.employee_code, parsed.full_name, designation, email, passwordHash],
         );
         await db.query(`INSERT INTO user_roles (user_id, role) VALUES ($1, $2)`, [
           userId,

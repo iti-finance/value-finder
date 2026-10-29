@@ -17,6 +17,27 @@ export const pool = new Pool({
   connectionTimeoutMillis: 5000,
 });
 
+let schemaReadyPromise: Promise<void> | null = null;
+
+/**
+ * Apply small, backward-compatible schema additions for existing deployments.
+ * db-init.sql only runs when PostgreSQL creates a brand-new data volume, so
+ * this keeps long-lived server volumes compatible with newer application code.
+ */
+async function ensureDatabaseSchema() {
+  if (!schemaReadyPromise) {
+    schemaReadyPromise = pool
+      .query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS designation varchar(120)`)
+      .then(() => undefined)
+      .catch((error) => {
+        schemaReadyPromise = null;
+        throw error;
+      });
+  }
+
+  await schemaReadyPromise;
+}
+
 /**
  * Verify database connection during application startup.
  */
@@ -44,10 +65,12 @@ export const db = {
     text: string,
     params?: unknown[],
   ): Promise<QueryResult<T>> => {
+    await ensureDatabaseSchema();
     return pool.query<T>(text, params);
   },
 
   withTransaction: async <T>(callback: (client: PoolClient) => Promise<T>): Promise<T> => {
+    await ensureDatabaseSchema();
     const client = await pool.connect();
 
     try {

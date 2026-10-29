@@ -41,7 +41,6 @@ import {
 } from "@/lib/vehicle.functions";
 import {
   createUser,
-  deleteUser,
   listAllUsers,
   resetUserPassword,
   resolvePasswordResetRequest,
@@ -52,6 +51,7 @@ import { toast } from "sonner";
 import {
   Loader2,
   Upload,
+  Download,
   LogOut,
   FileSpreadsheet,
   CheckCircle2,
@@ -492,16 +492,22 @@ type UserRow = {
   user_id: string;
   employee_code: string;
   full_name: string;
+  designation: string | null;
   email: string | null;
   is_active: boolean;
   role: string;
 };
 
+function formatDesignation(value: string) {
+  return value.replace(/(^|[\s/-])([a-z])/g, (_, separator: string, letter: string) => {
+    return `${separator}${letter.toUpperCase()}`;
+  });
+}
+
 function UsersPanel() {
   const listFn = useServerFn(listAllUsers);
   const createFn = useServerFn(createUser);
   const toggleFn = useServerFn(setUserActive);
-  const deleteFn = useServerFn(deleteUser);
   const resetFn = useServerFn(resetUserPassword);
   const bulkFn = useServerFn(bulkCreateUsers);
 
@@ -509,6 +515,31 @@ function UsersPanel() {
   const [loading, setLoading] = useState(true);
   const [openCreate, setOpenCreate] = useState(false);
   const [openBulk, setOpenBulk] = useState(false);
+  const [designationFilter, setDesignationFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const designationOptions = Array.from(
+    new Map(
+      users
+        .map((user) => formatDesignation(user.designation?.trim() ?? ""))
+        .filter(Boolean)
+        .map((designation) => [designation.toLowerCase(), designation]),
+    ).values(),
+  ).sort((a, b) => a.localeCompare(b));
+
+  const filteredUsers = users.filter((user) => {
+    const matchesDesignation =
+      designationFilter === "all" ||
+      (designationFilter === "unassigned"
+        ? !user.designation?.trim()
+        : user.designation?.toLowerCase() === designationFilter.toLowerCase());
+    const matchesRole = roleFilter === "all" || user.role === roleFilter;
+    const matchesStatus =
+      statusFilter === "all" || (statusFilter === "active" ? user.is_active : !user.is_active);
+
+    return matchesDesignation && matchesRole && matchesStatus;
+  });
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -564,15 +595,26 @@ function UsersPanel() {
     }
   };
 
-  const onDelete = async (u: UserRow) => {
-    if (!confirm(`Permanently delete user ${u.employee_code}? This cannot be undone.`)) return;
-    try {
-      await deleteFn({ data: { user_id: u.user_id } });
-      toast.success("User deleted");
-      refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+  const onExport = () => {
+    if (filteredUsers.length === 0) {
+      toast.error("No users match the selected filters");
+      return;
     }
+
+    const rows = filteredUsers.map((user) => ({
+      employee_code: user.employee_code,
+      full_name: user.full_name,
+      designation: user.designation ? formatDesignation(user.designation) : "",
+      email: user.email ?? "",
+      user_type: user.role === "admin" ? "Admin" : "User",
+      status: user.is_active ? "Active" : "Inactive",
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
+    const date = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(workbook, `users-export-${date}.xlsx`);
+    toast.success(`Exported ${rows.length} user${rows.length === 1 ? "" : "s"}`);
   };
 
   return (
@@ -582,6 +624,14 @@ function UsersPanel() {
           <UsersIcon className="h-4 w-4" /> Branch & admin users
         </CardTitle>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onExport}
+            disabled={loading || filteredUsers.length === 0}
+          >
+            <Download className="mr-1.5 h-4 w-4" /> Export
+          </Button>
           <Dialog open={openBulk} onOpenChange={setOpenBulk}>
             <DialogTrigger asChild>
               <Button size="sm" variant="outline">
@@ -602,20 +652,73 @@ function UsersPanel() {
                 <UserPlus className="mr-1.5 h-4 w-4" /> Add User
               </Button>
             </DialogTrigger>
-            <CreateUserDialog createFn={createFn} onCreated={onCreated} />
+            <CreateUserDialog
+              createFn={createFn}
+              designationOptions={designationOptions}
+              onCreated={onCreated}
+            />
           </Dialog>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 sm:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Designation</Label>
+            <Select value={designationFilter} onValueChange={setDesignationFilter}>
+              <SelectTrigger className="w-full bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All designations</SelectItem>
+                {designationOptions.map((designation) => (
+                  <SelectItem key={designation} value={designation}>
+                    {designation}
+                  </SelectItem>
+                ))}
+                <SelectItem value="unassigned">Not specified</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">User type</Label>
+            <Select value={roleFilter} onValueChange={setRoleFilter}>
+              <SelectTrigger className="w-full bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Admin &amp; User</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="branch">User</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Status</Label>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Active &amp; Inactive</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         {loading ? (
           <div className="grid place-items-center py-8">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : users.length === 0 ? (
           <p className="text-sm text-muted-foreground">No users yet.</p>
+        ) : filteredUsers.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            No users match the selected filters.
+          </p>
         ) : (
           <ul className="space-y-2">
-            {users.map((u) => (
+            {filteredUsers.map((u) => (
               <li
                 key={u.user_id}
                 className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"
@@ -628,6 +731,9 @@ function UsersPanel() {
                         <ShieldCheck className="h-3 w-3" />
                         Admin
                       </Badge>
+                    )}
+                    {u.designation && (
+                      <Badge variant="outline">{formatDesignation(u.designation)}</Badge>
                     )}
                     {!u.is_active && <Badge variant="destructive">Inactive</Badge>}
                   </div>
@@ -653,9 +759,6 @@ function UsersPanel() {
                   >
                     {u.is_active ? "Deactivate" : "Activate"}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => onDelete(u)} title="Delete">
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
                 </div>
               </li>
             ))}
@@ -668,41 +771,56 @@ function UsersPanel() {
 
 function CreateUserDialog({
   createFn,
+  designationOptions,
   onCreated,
 }: {
   createFn: (args: {
     data: {
       employee_code: string;
       full_name: string;
+      designation?: string;
       email?: string;
       role: "admin" | "branch";
       password?: string;
     };
   }) => Promise<unknown>;
+  designationOptions: string[];
   onCreated: () => void;
 }) {
   const [employeeCode, setEmployeeCode] = useState("");
   const [fullName, setFullName] = useState("");
+  const [designation, setDesignation] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "branch">("branch");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [designationFocused, setDesignationFocused] = useState(false);
+
+  const designationQuery = designation.trim().toLowerCase();
+  const designationSuggestions = designationQuery
+    ? designationOptions
+        .filter((option) => option.toLowerCase().includes(designationQuery))
+        .slice(0, 6)
+    : [];
 
   const submit = async () => {
     setLoading(true);
     try {
+      const trimmedPassword = password.trim();
       await createFn({
         data: {
           employee_code: employeeCode.trim(),
           full_name: fullName.trim(),
+          designation: designation.trim(),
           email: email.trim(),
           role,
-          password: password.trim() || undefined,
+          ...(trimmedPassword ? { password: trimmedPassword } : {}),
         },
       });
-      toast.success(`User created. Password: ${password.trim() || employeeCode}`);
+      toast.success(`User created. Password: ${trimmedPassword || employeeCode}`);
       setEmployeeCode("");
       setFullName("");
+      setDesignation("");
       setEmail("");
       setPassword("");
       setRole("branch");
@@ -735,6 +853,36 @@ function CreateUserDialog({
             Full Name <span className="text-destructive">*</span>
           </Label>
           <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+        </div>
+        <div className="relative space-y-1.5">
+          <Label>Designation</Label>
+          <Input
+            value={designation}
+            onChange={(e) => setDesignation(formatDesignation(e.target.value))}
+            onFocus={() => setDesignationFocused(true)}
+            onBlur={() => setDesignationFocused(false)}
+            placeholder="e.g. Branch Manager"
+            maxLength={120}
+            autoComplete="off"
+          />
+          {designationFocused && designationSuggestions.length > 0 && (
+            <div className="absolute z-50 mt-1 max-h-44 w-full overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+              {designationSuggestions.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className="flex w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    setDesignation(option);
+                    setDesignationFocused(false);
+                  }}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label>Email (optional, for contact)</Label>
@@ -789,6 +937,7 @@ function BulkUploadUsersDialog({
       rows: Array<{
         employee_code: string;
         full_name: string;
+        designation?: string;
         email?: string;
         role?: string;
         password?: string;
@@ -811,10 +960,18 @@ function BulkUploadUsersDialog({
 
   const downloadTemplate = () => {
     const ws = XLSX.utils.json_to_sheet([
-      { employee_code: "EMP1001", full_name: "Asha Rao", email: "", role: "branch", password: "" },
+      {
+        employee_code: "EMP1001",
+        full_name: "Asha Rao",
+        designation: "Sales Executive",
+        email: "",
+        role: "branch",
+        password: "",
+      },
       {
         employee_code: "EMP1002",
         full_name: "Rahul Singh",
+        designation: "Regional Manager",
         email: "rahul@itifl.com",
         role: "admin",
         password: "",
@@ -844,6 +1001,7 @@ function BulkUploadUsersDialog({
           return {
             employee_code: norm["employee_code"] ?? norm["employeecode"] ?? norm["code"] ?? "",
             full_name: norm["full_name"] ?? norm["fullname"] ?? norm["name"] ?? "",
+            designation: norm["designation"] ?? "",
             email: norm["email"] ?? "",
             role: norm["role"] ?? "",
             password: norm["password"] ?? "",
@@ -886,8 +1044,9 @@ function BulkUploadUsersDialog({
       <div className="space-y-3 text-sm">
         <p className="text-muted-foreground">
           Upload an Excel (.xlsx) or CSV file. Required columns: <code>employee_code</code>,{" "}
-          <code>full_name</code>. Optional: <code>email</code>, <code>role</code> (admin / branch —
-          defaults to branch), <code>password</code> (defaults to the Employee Code).
+          <code>full_name</code>. Optional: <code>designation</code>, <code>email</code>,{" "}
+          <code>role</code> (admin / branch — defaults to branch), <code>password</code> (defaults
+          to the Employee Code).
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={downloadTemplate}>

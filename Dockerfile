@@ -20,7 +20,7 @@ FROM node:24-bookworm-slim
 
 LABEL org.opencontainers.image.title="Value Finder" \
       org.opencontainers.image.description="Vehicle valuation and management application" \
-      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.version="1.1.0" \
       org.opencontainers.image.authors="Gulzar" \
       org.opencontainers.image.vendor="ITI Finance"
 

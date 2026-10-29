@@ -1,5 +1,7 @@
 import { db } from "@/integrations/db/client.server";
 
+const APP_VERSION = "1.1.0";
+
 export async function checkReadiness() {
   const timestamp = new Date().toISOString();
 
@@ -11,7 +13,7 @@ export async function checkReadiness() {
       application: "Value Finder",
       database: "UP",
       timestamp,
-      version: "1.0.0",
+      version: APP_VERSION,
     };
   } catch (error) {
     return {
@@ -19,7 +21,7 @@ export async function checkReadiness() {
       application: "Value Finder",
       database: "DOWN",
       timestamp,
-      version: "1.0.0",
+      version: APP_VERSION,
       error: error instanceof Error ? error.message : "Unknown error",
     };
   }
@@ -30,6 +32,6 @@ export function checkLiveness() {
     status: "UP",
     application: "Value Finder",
     timestamp: new Date().toISOString(),
-    version: "1.0.0",
+    version: APP_VERSION,
   };
 }

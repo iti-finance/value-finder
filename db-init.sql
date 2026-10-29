@@ -7,6 +7,7 @@ CREATE TABLE profiles (
   user_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   employee_code varchar(50) NOT NULL UNIQUE,
   full_name varchar(120) NOT NULL,
+  designation varchar(120),
   email varchar(255),
   password_hash text NOT NULL,
   is_active boolean NOT NULL DEFAULT true,
