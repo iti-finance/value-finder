@@ -1,0 +1,11 @@
+services:
+  value-finder:
+    networks:
+      value-finder-network:
+      shared_proxy:
+        aliases:
+          - iti-valuefinder-web
+
+networks:
+  shared_proxy:
+    external: true

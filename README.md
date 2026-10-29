@@ -232,6 +232,19 @@ This repository contains proprietary software intended solely for internal organ
 
 ## Deployment
 
-Production deployment is performed using Docker containers.
+Local development uses `docker-compose.yml`. Production deployments must check
+out a specific release tag and use both `docker-compose.yml` and
+`docker-compose.server.yml`; the server overlay attaches only the application
+service to the external `shared_proxy` network.
 
-Deployment documentation is available in the `docs/` directory.
+```bash
+git fetch origin --tags
+git checkout --detach <release-tag>
+
+docker compose -f docker-compose.yml -f docker-compose.server.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.server.yml up -d --build --no-deps value-finder
+```
+
+Never use `docker compose down -v` during deployment. It removes the persistent
+PostgreSQL volume. See [`docs/deployment.md`](docs/deployment.md) for environment
+setup, validation, and verification steps.

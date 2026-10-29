@@ -1,299 +1,119 @@
-# Value Finder - Deployment Guide
+# Value Finder deployment guide
 
-## Overview
+## Configuration boundaries
 
-This document describes how to deploy the Value Finder application using Docker.
+Value Finder uses separate Compose configuration for local development and
+production:
 
-The application consists of:
+- `docker-compose.yml` is the local development stack. It contains the
+  `postgres` and `value-finder` services, the `value-finder-network` network,
+  and the existing `postgres_data` volume.
+- `docker-compose.server.yml` is the production-only overlay. It attaches the
+  `value-finder` service to the external `shared_proxy` network with the alias
+  `iti-valuefinder-web`.
 
-- React + TanStack Start frontend/server
-- PostgreSQL database
-- Docker containers managed with Docker Compose
+Production commands must always specify both Compose files, in that order.
+Do not rename the services, the internal network, or the PostgreSQL volume.
 
----
+## Prerequisites
 
-# Prerequisites
-
-Ensure the following software is installed on the deployment server:
-
-- Docker Engine 24+
-- Docker Compose v2+
-- Git
-
-Verify the installation:
+The deployment server requires Docker Engine 24+, Docker Compose v2+, and Git.
+The shared reverse-proxy network must already exist:
 
 ```bash
-docker --version
-docker compose version
-git --version
+docker network inspect shared_proxy
 ```
 
----
+Creating or managing the shared proxy network is an infrastructure operation
+and is outside this application's deployment procedure.
 
-# Clone Repository
+## Environment configuration
 
-Clone the repository from GitHub.
+Environment files containing real credentials are server-local configuration.
+They must never be copied from production into the repository or committed.
+
+The repository intentionally ignores `.env` and `.env.*`, except for these
+placeholder-only templates:
+
+- `.env.example`
+- `.env.local.example`
+- `.env.server.example`
+
+For a new server installation, create the runtime file from the server
+template and replace every placeholder on the server:
 
 ```bash
-git clone <repository-url>
-cd value-finder
+cp .env.server.example .env
+chmod 600 .env
 ```
 
----
+Keep the existing production variable names and values during an upgrade.
+In particular, `DB_HOST=postgres` remains compatible with the bundled database
+service. Never overwrite a working production `.env` with an example file.
 
-# Configure Environment Variables
+## Deploy a specific release
 
-Copy the example environment file.
+Production must deploy an immutable release tag, not an unpinned branch head.
+Replace `<release-tag>` with an approved tag such as `v1.1.0`:
 
 ```bash
-cp .env.example .env
+git fetch origin --tags
+git checkout --detach <release-tag>
+git describe --tags --exact-match
 ```
 
-Update the values in `.env`.
+The final command must print the intended release tag before deployment.
 
-Example:
-
-```env
-NODE_ENV=production
-HOST=0.0.0.0
-PORT=3001
-
-DB_HOST=postgres
-DB_PORT=5432
-DB_NAME=value_finder
-DB_USER=postgres
-DB_PASSWORD=change_this_password
-
-JWT_SECRET=your_secure_random_secret
-JWT_EXPIRES_IN=8h
-```
-
-> **Important**
->
-> Never commit the `.env` file to Git.
-
----
-
-# Build Docker Image
-
-Build the Docker image.
+Validate the combined configuration before making any container changes:
 
 ```bash
-docker build -t value-finder:latest .
+docker compose -f docker-compose.yml -f docker-compose.server.yml config --quiet
 ```
 
-If your environment uses TLS interception or an internal certificate chain for
-registry access, you may need to set Docker build args or trusted certificates
-so npm can install packages inside the container.
-
----
-
-# Start Application
-
-Start the application using Docker Compose.
+Deploy only the application service. `--no-deps` prevents this command from
+recreating or replacing PostgreSQL:
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.server.yml up -d --build --no-deps value-finder
 ```
 
-This starts:
+Do not use single-file Compose commands in production. Do not run
+`docker compose down -v` during deployment; `-v` deletes the persistent
+PostgreSQL volume and its data.
 
-- `postgres` using the official PostgreSQL image
-- `value-finder` using the application Dockerfile
+## Verification
 
-On first startup, PostgreSQL automatically runs `db-init.sql` from
-`/docker-entrypoint-initdb.d/` and creates the application schema.
-
-Verify the container is running.
+Confirm the merged project state and review the application logs:
 
 ```bash
-docker ps
+docker compose -f docker-compose.yml -f docker-compose.server.yml ps
+docker compose -f docker-compose.yml -f docker-compose.server.yml logs --tail=100 value-finder
 ```
 
----
-
-# Verify Deployment
-
-Open the application in your browser.
-
-```
-http://localhost:3001
-```
-
-If deployed on another server:
-
-```
-http://<server-ip>:3001
-```
-
----
-
-# View Logs
-
-View application logs.
+Confirm the health endpoint reports `UP` and the expected release version:
 
 ```bash
-docker compose logs -f
+curl --fail http://127.0.0.1:3001/api/health
 ```
 
-View logs for a specific service.
+## Database safeguards
+
+The `postgres_data` named volume and the `postgres` service are defined only in
+the base Compose file and are preserved by the application-only deployment
+command. `db-init.sql` runs only when PostgreSQL initializes an empty data
+directory; it does not replace or reset an existing production database.
+
+Before any separately approved database maintenance, take and verify a backup.
+Database resets and volume deletion are not deployment steps.
+
+## Local development
+
+Local development continues to use only the base file:
 
 ```bash
-docker compose logs -f value-finder
+docker compose up -d --build
+docker compose ps
 ```
 
----
-
-# Stop Application
-
-Stop the application.
-
-```bash
-docker compose down
-```
-
----
-
-# Restart Application
-
-Restart the application.
-
-```bash
-docker compose restart
-```
-
----
-
-# Update Application
-
-Pull the latest source code.
-
-```bash
-git pull
-```
-
-Rebuild the Docker image.
-
-```bash
-docker compose build --no-cache
-```
-
-Start the updated container.
-
-```bash
-docker compose up -d
-```
-
----
-
-# Database
-
-The PostgreSQL database is included in `docker-compose.yml`.
-
-Ensure:
-
-- Database credentials in `.env` are correct.
-- `DB_HOST=postgres` when using the bundled Compose database.
-- `db-init.sql` contains the desired schema before first startup.
-
-## Schema initialization behavior
-
-`db-init.sql` is executed automatically only when the PostgreSQL data directory
-is empty.
-
-If you need to recreate the database from scratch and re-run the schema:
-
-```bash
-docker compose down -v
-docker compose up -d
-```
-
-This removes the named PostgreSQL volume and initializes a fresh database on
-the next start.
-
----
-
-# Troubleshooting
-
-## Application does not start
-
-Check container logs.
-
-```bash
-docker compose logs -f
-```
-
----
-
-## Database connection failed
-
-Verify:
-
-- PostgreSQL is running: `docker compose ps`
-- Database credentials are correct.
-- `DB_HOST=postgres` in `.env` when using the bundled database.
-- The PostgreSQL container is healthy before the app starts.
-
----
-
-## Port already in use
-
-Check which process is using the port.
-
-Linux:
-
-```bash
-sudo lsof -i :3001
-```
-
-Windows:
-
-```cmd
-netstat -ano | findstr 3001
-```
-
-Change the port in:
-
-- `.env`
-- `docker-compose.yml`
-
-if required.
-
----
-
-# Security Recommendations
-
-For production deployments:
-
-- Use a strong `JWT_SECRET`.
-- Never commit `.env`.
-- Use a strong `DB_PASSWORD`.
-- Restrict database access if you later expose PostgreSQL outside the Docker network.
-- Enable HTTPS using Nginx or another reverse proxy.
-- Regularly update Docker images.
-- Monitor container logs.
-- Perform regular PostgreSQL backups.
-
----
-
-# Future Enhancements
-
-Future production infrastructure may include:
-
-- Shared Nginx reverse proxy
-- HTTPS (Let's Encrypt)
-- Multiple applications behind one Nginx instance
-- Health endpoints
-- Automated backups
-- CI/CD pipeline
-- Monitoring and alerting
-
----
-
-# Version
-
-Document Version: **1.0**
-
-Application: **Value Finder**
-
-Last Updated: July 2026
+Local configuration may be based on `.env.local.example`. Placeholder values
+must be changed only in ignored, developer-local environment files.
